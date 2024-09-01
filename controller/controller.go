@@ -120,6 +120,14 @@ var (
 			Help:      "Number of Registry AAAA records.",
 		},
 	)
+	registryCNAMERecords = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: "external_dns",
+			Subsystem: "registry",
+			Name:      "cname_records",
+			Help:      "Number of Registry CNAME records.",
+		},
+	)
 	sourceARecords = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Namespace: "external_dns",
@@ -134,6 +142,14 @@ var (
 			Subsystem: "source",
 			Name:      "aaaa_records",
 			Help:      "Number of Source AAAA records.",
+		},
+	)
+	sourceCNAMERecords = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: "external_dns",
+			Subsystem: "source",
+			Name:      "cname_records",
+			Help:      "Number of Source CNAME records.",
 		},
 	)
 	verifiedARecords = prometheus.NewGauge(
@@ -152,6 +168,14 @@ var (
 			Help:      "Number of DNS AAAA-records that exists both in source and registry.",
 		},
 	)
+	verifiedCNAMERecords = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: "external_dns",
+			Subsystem: "controller",
+			Name:      "verified_cname_records",
+			Help:      "Number of DNS CNAME-records that exists both in source and registry.",
+		},
+	)
 )
 
 func init() {
@@ -166,10 +190,13 @@ func init() {
 	prometheus.MustRegister(controllerNoChangesTotal)
 	prometheus.MustRegister(registryARecords)
 	prometheus.MustRegister(registryAAAARecords)
+	prometheus.MustRegister(registryCNAMERecords)
 	prometheus.MustRegister(sourceARecords)
 	prometheus.MustRegister(sourceAAAARecords)
+	prometheus.MustRegister(sourceCNAMERecords)
 	prometheus.MustRegister(verifiedARecords)
 	prometheus.MustRegister(verifiedAAAARecords)
+	prometheus.MustRegister(verifiedCNAMERecords)
 }
 
 // Controller is responsible for orchestrating the different components.
@@ -217,9 +244,10 @@ func (c *Controller) RunOnce(ctx context.Context) error {
 	}
 
 	registryEndpointsTotal.Set(float64(len(records)))
-	regARecords, regAAAARecords := countAddressRecords(records)
+	regARecords, regAAAARecords, regCNAMERecords := countAddressRecords(records)
 	registryARecords.Set(float64(regARecords))
 	registryAAAARecords.Set(float64(regAAAARecords))
+	registryCNAMERecords.Set(float64(regCNAMERecords))
 	ctx = context.WithValue(ctx, provider.RecordsContextKey, records)
 
 	endpoints, err := c.Source.Endpoints(ctx)
@@ -229,12 +257,14 @@ func (c *Controller) RunOnce(ctx context.Context) error {
 		return err
 	}
 	sourceEndpointsTotal.Set(float64(len(endpoints)))
-	srcARecords, srcAAAARecords := countAddressRecords(endpoints)
+	srcARecords, srcAAAARecords, srcCNAMERecords := countAddressRecords(endpoints)
 	sourceARecords.Set(float64(srcARecords))
 	sourceAAAARecords.Set(float64(srcAAAARecords))
-	vARecords, vAAAARecords := countMatchingAddressRecords(endpoints, records)
+	sourceCNAMERecords.Set(float64(srcCNAMERecords))
+	vARecords, vAAAARecords, vCNAMERecords := countMatchingAddressRecords(endpoints, records)
 	verifiedARecords.Set(float64(vARecords))
 	verifiedAAAARecords.Set(float64(vAAAARecords))
+	verifiedCNAMERecords.Set(float64(vCNAMERecords))
 	endpoints, err = c.Registry.AdjustEndpoints(endpoints)
 	if err != nil {
 		return fmt.Errorf("adjusting endpoints: %w", err)
@@ -289,7 +319,7 @@ func latest(r time.Time, times ...time.Time) time.Time {
 }
 
 // Counts the intersections of A and AAAA records in endpoint and registry.
-func countMatchingAddressRecords(endpoints []*endpoint.Endpoint, registryRecords []*endpoint.Endpoint) (int, int) {
+func countMatchingAddressRecords(endpoints []*endpoint.Endpoint, registryRecords []*endpoint.Endpoint) (int, int, int) {
 	recordsMap := make(map[string]map[string]struct{})
 	for _, regRecord := range registryRecords {
 		if _, found := recordsMap[regRecord.DNSName]; !found {
@@ -299,6 +329,7 @@ func countMatchingAddressRecords(endpoints []*endpoint.Endpoint, registryRecords
 	}
 	aCount := 0
 	aaaaCount := 0
+	cnameCount := 0
 	for _, sourceRecord := range endpoints {
 		if _, found := recordsMap[sourceRecord.DNSName]; found {
 			if _, found := recordsMap[sourceRecord.DNSName][sourceRecord.RecordType]; found {
@@ -307,25 +338,30 @@ func countMatchingAddressRecords(endpoints []*endpoint.Endpoint, registryRecords
 					aCount++
 				case endpoint.RecordTypeAAAA:
 					aaaaCount++
+				case endpoint.RecordTypeCNAME:
+					cnameCount++
 				}
 			}
 		}
 	}
-	return aCount, aaaaCount
+	return aCount, aaaaCount, cnameCount
 }
 
-func countAddressRecords(endpoints []*endpoint.Endpoint) (int, int) {
+func countAddressRecords(endpoints []*endpoint.Endpoint) (int, int, int) {
 	aCount := 0
 	aaaaCount := 0
+	cnameCount := 0
 	for _, endPoint := range endpoints {
 		switch endPoint.RecordType {
 		case endpoint.RecordTypeA:
 			aCount++
 		case endpoint.RecordTypeAAAA:
 			aaaaCount++
+		case endpoint.RecordTypeCNAME:
+			cnameCount++
 		}
 	}
-	return aCount, aaaaCount
+	return aCount, aaaaCount, cnameCount
 }
 
 // ScheduleRunOnce makes sure execution happens at most once per interval.
