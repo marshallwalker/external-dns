@@ -155,6 +155,16 @@ func getTestSource() *testutils.MockSource {
 			RecordType: endpoint.RecordTypeAAAA,
 			Targets:    endpoint.Targets{"2001:DB8::2"},
 		},
+		{
+			DNSName:    "create-cname-record",
+			RecordType: endpoint.RecordTypeCNAME,
+			Targets:    endpoint.Targets{"example.cname.local"},
+		},
+		{
+			DNSName:    "update-cname-record",
+			RecordType: endpoint.RecordTypeCNAME,
+			Targets:    endpoint.Targets{"changed.cname.local"},
+		},
 	}, nil)
 
 	return source
@@ -190,23 +200,37 @@ func getTestProvider() provider.Provider {
 				RecordType: endpoint.RecordTypeAAAA,
 				Targets:    endpoint.Targets{"2001:DB8::4"},
 			},
+			{
+				DNSName:    "update-cname-record",
+				RecordType: endpoint.RecordTypeCNAME,
+				Targets:    endpoint.Targets{"test.cname.local"},
+			},
+			{
+				DNSName:    "delete-cname-record",
+				RecordType: endpoint.RecordTypeCNAME,
+				Targets:    endpoint.Targets{"sample.cname.local"},
+			},
 		},
 		&plan.Changes{
 			Create: []*endpoint.Endpoint{
 				{DNSName: "create-aaaa-record", RecordType: endpoint.RecordTypeAAAA, Targets: endpoint.Targets{"2001:DB8::1"}},
 				{DNSName: "create-record", RecordType: endpoint.RecordTypeA, Targets: endpoint.Targets{"1.2.3.4"}},
+				{DNSName: "create-cname-record", RecordType: endpoint.RecordTypeCNAME, Targets: endpoint.Targets{"example.cname.local"}},
 			},
 			UpdateNew: []*endpoint.Endpoint{
 				{DNSName: "update-aaaa-record", RecordType: endpoint.RecordTypeAAAA, Targets: endpoint.Targets{"2001:DB8::2"}},
 				{DNSName: "update-record", RecordType: endpoint.RecordTypeA, Targets: endpoint.Targets{"8.8.4.4"}},
+				{DNSName: "update-cname-record", RecordType: endpoint.RecordTypeCNAME, Targets: endpoint.Targets{"changed.cname.local"}},
 			},
 			UpdateOld: []*endpoint.Endpoint{
 				{DNSName: "update-aaaa-record", RecordType: endpoint.RecordTypeAAAA, Targets: endpoint.Targets{"2001:DB8::3"}},
 				{DNSName: "update-record", RecordType: endpoint.RecordTypeA, Targets: endpoint.Targets{"8.8.8.8"}},
+				{DNSName: "update-cname-record", RecordType: endpoint.RecordTypeCNAME, Targets: endpoint.Targets{"test.cname.local"}},
 			},
 			Delete: []*endpoint.Endpoint{
 				{DNSName: "delete-aaaa-record", RecordType: endpoint.RecordTypeAAAA, Targets: endpoint.Targets{"2001:DB8::4"}},
 				{DNSName: "delete-record", RecordType: endpoint.RecordTypeA, Targets: endpoint.Targets{"4.3.2.1"}},
+				{DNSName: "delete-cname-record", RecordType: endpoint.RecordTypeCNAME, Targets: endpoint.Targets{"sample.cname.local"}},
 			},
 		},
 	)
@@ -270,6 +294,7 @@ func TestRun(t *testing.T) {
 	// check the verified records
 	assert.Equal(t, math.Float64bits(1), valueFromMetric(verifiedARecords))
 	assert.Equal(t, math.Float64bits(1), valueFromMetric(verifiedAAAARecords))
+	assert.Equal(t, math.Float64bits(1), valueFromMetric(verifiedCNAMERecords))
 }
 
 func valueFromMetric(metric prometheus.Gauge) uint64 {
@@ -566,6 +591,7 @@ func TestVerifyARecords(t *testing.T) {
 	)
 	assert.Equal(t, math.Float64bits(2), valueFromMetric(verifiedARecords))
 	assert.Equal(t, math.Float64bits(0), valueFromMetric(verifiedAAAARecords))
+	assert.Equal(t, math.Float64bits(0), valueFromMetric(verifiedCNAMERecords))
 }
 
 func TestVerifyAAAARecords(t *testing.T) {
